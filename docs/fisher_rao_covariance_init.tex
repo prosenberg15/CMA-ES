@@ -1,0 +1,260 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{bm}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=blue!50!black, urlcolor=blue!50!black}
+
+% ---- math shortcuts ----
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\one}{\mathbf{1}}
+\newcommand{\Tm}{T_m\Delta}
+\newcommand{\geff}{\mu_{\mathrm{eff}}}
+\DeclareMathOperator{\diag}{diag}
+\DeclareMathOperator{\spn}{span}
+\DeclareMathOperator{\Exp}{Exp}
+\DeclareMathOperator{\intr}{int}
+
+% ---- code listing style ----
+\definecolor{codegray}{gray}{0.96}
+\definecolor{codekw}{rgb}{0.10,0.30,0.65}
+\definecolor{codecmt}{rgb}{0.30,0.55,0.30}
+\lstset{
+  language=C++,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{codekw}\bfseries,
+  commentstyle=\color{codecmt}\itshape,
+  backgroundcolor=\color{codegray},
+  frame=single,
+  rulecolor=\color{gray!40},
+  breaklines=true,
+  showstringspaces=false,
+  columns=fullflexible,
+  xleftmargin=1em,
+  framexleftmargin=1em,
+  morekeywords={Mat,Vec,Eigen}
+}
+
+\title{Initializing the CMA-ES Covariance Matrix on the Simplex\\
+       via a Fisher--Rao Orthonormal Frame}
+\author{}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We optimize a function $H(x)$ over the scaled probability simplex
+$\Delta_{n-1}^{R} = \{x \in \R^n : x_i \ge 0,\ \sum_i x_i = R\}$ using a
+Riemannian variant of CMA-ES. The search distribution is carried in the
+tangent space of the simplex under the Fisher--Rao metric. This note records
+how to construct a $g_m$-orthonormal frame for that tangent space, how to
+initialize the covariance in it, and the design consequences of using rank-one
+and rank-$\mu$ covariance updates.
+\end{abstract}
+
+\section{Tangent-space parameterization}
+
+We maintain a distribution mean $m \in \intr \Delta_{n-1}^{R}$ and a step size
+$\sigma > 0$. The covariance is represented as an $(n-1)\times(n-1)$
+positive-definite matrix $C$ expressed in an orthonormal basis
+$\{e_1, \dots, e_{n-1}\}$ of the tangent space $\Tm_{n-1}^{R}$ under the
+Fisher--Rao metric $g_m$.
+
+The tangent space of the simplex at $m$ is
+\begin{equation}
+  \Tm = \ker(\one^\top) = \Bigl\{ v \in \R^n : \textstyle\sum_i v_i = 0 \Bigr\},
+\end{equation}
+an $(n-1)$-dimensional subspace: any admissible displacement must preserve the
+sum constraint $\sum_i x_i = R$. A convenient frame is any orthonormal frame
+with respect to $g_m$; a systematic construction is to take a standard
+Euclidean orthonormal basis (ONB) of $\ker(\one^\top)$ and then
+$g_m$-orthonormalize it (e.g.\ via Gram--Schmidt, or a Cholesky factor of the
+metric tensor restricted to that basis).
+
+\paragraph{Dimensional bookkeeping.} The mean $m$ has length $n$, but the
+covariance $C$, the standard-normal sampling vectors $z$, and the eigenfactors
+of $C$ are all $(n-1)$-dimensional. The frame $E = [\,e_1 \cdots e_{n-1}\,]$ is
+an $n \times (n-1)$ matrix mapping tangent coordinates to ambient
+displacements.
+
+\section{The Fisher--Rao metric}
+
+On the simplex the Fisher--Rao metric is diagonal in the ambient coordinates,
+\begin{equation}
+  g_m(u, v) = \sum_{i=1}^{n} \frac{u_i v_i}{m_i}
+  \qquad\Longleftrightarrow\qquad
+  G = \diag\!\left(\frac{1}{m_1}, \dots, \frac{1}{m_n}\right).
+  \label{eq:metric}
+\end{equation}
+For the scaled simplex this coincides with the categorical Fisher metric up to
+a global constant $1/R$, which merely rescales $\sigma$. Note that $G$ diverges
+as any $m_i \to 0$, so $m$ must remain in the \emph{interior} of the simplex.
+
+\section{Constructing the $g_m$-orthonormal frame}
+
+\subsection*{Step 1: Euclidean ONB of $\ker(\one^\top)$}
+
+Rather than a numerical QR factorization, use the closed-form \emph{Helmert
+contrast matrix}, an $n \times (n-1)$ basis whose column $k$
+($k = 1, \dots, n-1$) is
+\begin{equation}
+  b_k = \frac{1}{\sqrt{k(k+1)}}\,
+        \bigl(\,\underbrace{1, \dots, 1}_{k},\ -k,\ 0, \dots, 0\,\bigr)^\top.
+  \label{eq:helmert}
+\end{equation}
+Each column sums to zero (hence lies in $\ker(\one^\top)$), has unit Euclidean
+norm, and the columns are mutually orthogonal:
+\begin{equation}
+  \one^\top b_k = 0, \qquad \|b_k\|_2 = 1, \qquad b_j^\top b_k = \delta_{jk}.
+\end{equation}
+
+\subsection*{Step 2: restrict the metric and factor it}
+
+Let $B = [\,b_1 \cdots b_{n-1}\,]$. The metric restricted to the tangent basis
+is the $(n-1)\times(n-1)$ symmetric positive-definite matrix
+\begin{equation}
+  M = B^\top G B,
+\end{equation}
+with Cholesky factorization
+\begin{equation}
+  M = L L^\top, \qquad L \text{ lower triangular.}
+\end{equation}
+
+\subsection*{Step 3: orthonormalize}
+
+Define the frame
+\begin{equation}
+  E = B\, L^{-\top}.
+  \label{eq:frame}
+\end{equation}
+Then $E$ is $g_m$-orthonormal:
+\begin{equation}
+  E^\top G E
+    = L^{-1} B^\top G B\, L^{-\top}
+    = L^{-1} M L^{-\top}
+    = L^{-1} (L L^\top) L^{-\top}
+    = I_{n-1}.
+\end{equation}
+The covariance is initialized to the identity in this frame,
+$C = I_{n-1}$, so that the ambient covariance operator is $E C E^\top$, a
+rank-$(n-1)$ operator supported on the tangent space.
+
+\subsection*{Reference implementation (Eigen)}
+
+\begin{lstlisting}
+// Helmert: Euclidean ONB of ker(1^T), n x (n-1)
+Mat helmert_basis(int n) {
+    Mat B = Mat::Zero(n, n - 1);
+    for (int k = 1; k <= n - 1; ++k) {
+        double s = 1.0 / std::sqrt(double(k) * (k + 1));
+        for (int i = 0; i < k; ++i) B(i, k - 1) = s;
+        B(k, k - 1) = -double(k) * s;
+    }
+    return B;
+}
+
+// Build g_m-orthonormal tangent frame E (n x n-1) at interior mean m
+void init_frame(const Vec& m) {
+    Mat B  = helmert_basis(n);
+    Mat GB = m.cwiseInverse().asDiagonal() * B;   // G*B: scales row i by 1/m_i
+    Mat M  = B.transpose() * GB;                  // restricted metric (n-1 x n-1)
+    Eigen::LLT<Mat> llt(M);
+    if (llt.info() != Eigen::Success)
+        throw std::runtime_error("restricted metric not SPD (m on boundary?)");
+    Mat L = llt.matrixL();
+    // E = B L^{-T}  <=>  E^T = L^{-1} B^T  (lower-triangular solve)
+    E = L.triangularView<Eigen::Lower>().solve(B.transpose()).transpose();
+    C = Mat::Identity(n - 1, n - 1);              // covariance in this frame
+}
+\end{lstlisting}
+
+\section{Practical notes}
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{Initialize at the centroid.} Take $m_i = R/n$. This is the
+        natural interior start and is well-conditioned: there
+        $G = (n/R) I$, so $M = (n/R) I$ and $E = \sqrt{R/n}\, B$.
+  \item \textbf{Exploit diagonality.} $G$ is diagonal; never materialize it
+        densely. Scaling the rows of $B$ by $1/m_i$ computes $GB$ directly.
+  \item \textbf{Retraction (later).} A sampled tangent vector
+        $v = \sigma\, E (B_C D_C z)$ is mapped back to the simplex by the
+        exponential map $m \mapsto \Exp_m(v)$. The isometry
+        $x \mapsto 2\sqrt{x}$ sends the simplex to a sphere, so Fisher--Rao
+        geodesics are great-circle arcs.
+\end{itemize}
+
+\section{Verification}
+
+After \texttt{init\_frame} at an interior mean, check numerically:
+\begin{enumerate}[label=(\arabic*), leftmargin=2em]
+  \item $\|E^\top G E - I_{n-1}\| < 10^{-10}$ \quad ($g_m$-orthonormality);
+  \item $\one^\top E \approx 0$ \quad (every column is a valid tangent vector);
+  \item at the centroid, $E^\top E = (R/n)\, I_{n-1}$.
+\end{enumerate}
+
+\section{Consequence of rank-one and rank-$\mu$ updates}
+
+The covariance is updated each generation by a combination of a rank-one and a
+rank-$\mu$ term,
+\begin{equation}
+  C \leftarrow (1 - c_1 - c_\mu)\, C
+    \;+\; c_1\, p_c p_c^\top
+    \;+\; c_\mu \sum_{i} w_i\, y_i y_i^\top,
+  \label{eq:cupdate}
+\end{equation}
+where $y_i$ are the selected tangent steps and $p_c$ is the covariance
+evolution path. The rank-$\mu$ term is built entirely from the current
+generation's data and is self-contained in the current frame. The rank-one
+term, however, uses the \emph{cumulative} evolution path
+\begin{equation}
+  p_c \leftarrow (1 - c_c)\, p_c
+    + \sqrt{c_c (2 - c_c)\, \geff}\;\langle y \rangle_w,
+  \label{eq:pc}
+\end{equation}
+which carries history across generations, as does the step-size path $p_\sigma$
+used by cumulative step-length adaptation.
+
+\paragraph{Why this matters.} The frame $E = E(m)$ is mean-dependent and
+changes every generation. The evolution paths $p_c, p_\sigma$ and the
+covariance $C$ are stored in tangent \emph{coordinates}, so when the mean moves
+$m_t \to m_{t+1}$ these objects live in different tangent spaces and cannot be
+combined directly. Whereas a pure rank-$\mu$ scheme uses only current-generation
+data and is forgiving, the rank-one and CSA paths make \textbf{parallel
+transport mandatory}.
+
+\paragraph{Parallel transport.} Moving the mean along the Fisher--Rao geodesic
+induces a linear isometry $\tau : T_{m_t} \to T_{m_{t+1}}$. In the two
+$g$-orthonormal frames it is represented by the orthogonal matrix
+\begin{equation}
+  Q = E_{t+1}^\top\, G_{m_{t+1}}\, \tau\, E_t,
+  \qquad Q^\top Q = I_{n-1},
+\end{equation}
+and the persistent state is transported as a batch each generation,
+\begin{equation}
+  p_c \leftarrow Q p_c, \qquad
+  p_\sigma \leftarrow Q p_\sigma, \qquad
+  C \leftarrow Q\, C\, Q^\top.
+\end{equation}
+Because $Q$ is orthogonal, $Q C Q^\top$ remains positive-definite with the same
+eigenvalues, and path norms are preserved---exactly the property that keeps the
+CSA length comparison $\|p_\sigma\|$ versus its expectation valid.
+
+\paragraph{Resulting loop structure.}
+\begin{enumerate}[label=\arabic*., leftmargin=2em]
+  \item Sample $\lambda$ offspring in $T_{m_t}$;
+  \item select and recombine to update the mean $m_t \to m_{t+1}$;
+  \item build the new frame $E_{t+1} = E(m_{t+1})$;
+  \item transport $p_c, p_\sigma, C$ from the old frame to the new via $Q$;
+  \item apply the CSA update ($p_\sigma, \sigma$) and the covariance update
+        \eqref{eq:cupdate}--\eqref{eq:pc};
+  \item eigendecompose $C = B_C D_C^2 B_C^\top$ for the next round of sampling.
+\end{enumerate}
+The frame \emph{construction} itself is unchanged by the choice of update; only
+the surrounding state and loop must account for transport.
+
+\end{document}
