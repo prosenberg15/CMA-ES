@@ -9,12 +9,14 @@
 
 using Vec = Eigen::VectorXd;
 
+// container for run config. params
 struct RunConfig {
     int n = 0;
     double R = 1.0;
-    bool generate = true;
+    bool generate = true; // true --> generate params for obj function internally, false --> read from file
     std::string file;
     unsigned seed = 42;
+    int lambda = 0;   // population size; 0 = use the default from params
 };
 
 // routine to read run configuration from a key-value file
@@ -35,8 +37,9 @@ RunConfig parse_config(const std::string& fname) {
             else if (m == "read")     cfg.generate = false;
             else throw std::runtime_error("config: mode must be 'generate' or 'read'");
         }
-        else if (key == "file") ss >> cfg.file;
-        else if (key == "seed") ss >> cfg.seed;
+        else if (key == "file")   ss >> cfg.file;
+        else if (key == "seed")   ss >> cfg.seed;
+        else if (key == "lambda") ss >> cfg.lambda;
         else throw std::runtime_error("unknown config key: " + key);
     }
     // validate the combination
@@ -44,6 +47,8 @@ RunConfig parse_config(const std::string& fname) {
         throw std::runtime_error("config: mode=read requires a 'file'");
     if (cfg.generate && cfg.n <= 0)
         throw std::runtime_error("config: mode=generate requires n > 0");
+    if (cfg.lambda < 0 || cfg.lambda == 1)
+         throw std::runtime_error("config: invalid lambda, requires lambda = 0 (default) or lambda >=2");
     return cfg;
 }
 

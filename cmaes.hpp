@@ -12,8 +12,8 @@ using Mat = Eigen::MatrixXd;
 class cmaes{
 
     public:
-        cmaes(int n, double sigma0_, double R_, std::function<double(const Vec&)> objective, unsigned seed = 42) : 
-            par(n), 
+        cmaes(int n, double sigma0_, double R_, std::function<double(const Vec&)> objective, unsigned seed = 42, int lambda = 0) :
+            par(n, lambda),
             d(par.n-1),
             obj(objective), 
             rng(seed) {
@@ -66,7 +66,6 @@ class cmaes{
         Mat X;
 
         long counteval = 0;
-        long eigeneval = 0;
         double R;
 
         double EN;
@@ -160,7 +159,7 @@ class cmaes{
             }
 
             //fitness history
-            if(fhist.size() >= hist_cap) fhist.pop_front();
+            if((int)fhist.size() >= hist_cap) fhist.pop_front();
             fhist.push_back(H_best);
 
             // store old m

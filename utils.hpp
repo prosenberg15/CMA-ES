@@ -13,7 +13,9 @@
 #include <cassert>
 #include <Eigen/Dense>
 
-// some utility functions
+// some utility functions 
+//  - random number generation
+//  - routines to set up objective function
 namespace utils {
 
 using Vec = Eigen::VectorXd;
@@ -26,11 +28,7 @@ using Mat = Eigen::MatrixXd;
 struct T2 {int i, j; double Jij;};
 struct T3 {int i, j, k; double Kijk;};
 
-// ---------------------------------------------------------------------------
-// Random number generation
-// ---------------------------------------------------------------------------
-// CMA-ES samples standard-normal vectors z ~ N(0, I) every generation, so we
-// keep a single seeded generator around and hand out N(0,1) draws from it.
+// random number generation, draws from N(0,1)
 class RNG {
 public:
     explicit RNG(unsigned seed = std::random_device{}())
@@ -192,11 +190,92 @@ class objective_func{
             }
         }
 
+        // check that H contains required terms: each of hi, Jij, Kijk must
+        // contain both a positive and a negative term.
+        // empty 
+        bool check_params() const {
+            const double tol = 1e-10;
+
+            bool valid_params = true;
+
+            // check that hi has positive and negative terms
+            if(hi.size()>0){
+                valid_params = valid_params &&
+                            (hi.minCoeff() < -tol && hi.maxCoeff() > tol);
+            }
+
+            //  check that Jij has positive and negative terms
+            if(Jij.size()>0){
+                bool j_has_pos = std::any_of(Jij.begin(), Jij.end(),
+                                            [tol](const T2& t){ return t.Jij >  tol; });
+                bool j_has_neg = std::any_of(Jij.begin(), Jij.end(),
+                                            [tol](const T2& t){ return t.Jij < -tol; });
+                valid_params = valid_params && j_has_pos && j_has_neg;
+            }
+
+            // check that Kijk has positive and negative terms
+            if(Kijk.size()>0){
+                bool k_has_pos = std::any_of(Kijk.begin(), Kijk.end(),
+                                            [tol](const T3& t){ return t.Kijk >  tol; });
+                bool k_has_neg = std::any_of(Kijk.begin(), Kijk.end(),
+                                            [tol](const T3& t){ return t.Kijk < -tol; });
+                valid_params = valid_params && k_has_pos && k_has_neg;
+            }
+
+            if(hi.size()==0 && Jij.size()==0 && Kijk.size()==0)
+                throw std::runtime_error("Empty objective function.");
+
+            return valid_params;
+        }
+
+        // print the min/max coefficient of each term (skips empty containers)
+        void print_param_ranges() const {
+            if (hi.size() > 0)
+                std::cout << "h:  min val. = " << hi.minCoeff()
+                          << "  max val. = " << hi.maxCoeff() << "\n";
+
+            if (!Jij.empty()) {
+                auto [j_min, j_max] = std::minmax_element(
+                    Jij.begin(), Jij.end(),
+                    [](const T2& a, const T2& b){ return a.Jij < b.Jij; });
+                std::cout << "J:  min val. = " << j_min->Jij
+                          << "  max val. = " << j_max->Jij << "\n";
+            }
+
+            if (!Kijk.empty()) {
+                auto [k_min, k_max] = std::minmax_element(
+                    Kijk.begin(), Kijk.end(),
+                    [](const T3& a, const T3& b){ return a.Kijk < b.Kijk; });
+                std::cout << "K:  min val. = " << k_min->Kijk
+                          << "  max val. = " << k_max->Kijk << "\n";
+            }
+        }
+
+        // generate params and validate that they include positive and negative values
+        // valid params are written to obj_params.txt
+        void gen_params_with_validation(int n, double R_val, unsigned seed){
+            bool valid_params = false;
+            while(!valid_params){
+                generate_test_params(n, R_val, seed);
+                valid_params = check_params();
+                ++seed;
+            }
+            print_param_ranges();   // print min./max. of the accepted parameters
+            std::cout<<"Objective function paramters written to obj_params.txt\n";
+            write_params("obj_params.txt");
+        }
+
+        double get_uniform_obj_val() const {
+            double val = R_/nvar_;
+            Vec x0 = Vec::Constant(nvar_, val);
+            return H(x0);
+        }
+
         int nvar() const {return nvar_;};
 
         double R() const {return R_;};
 
-        /* small function to insure parameters of H are valid*/
+        // small function to insure parameters of H are valid
         void check(int i){
             if(i < 0 || i >= nvar_) throw std::runtime_error("invalid parameter for H(x)");
         }
